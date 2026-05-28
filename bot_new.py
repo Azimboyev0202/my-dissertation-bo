@@ -95,14 +95,17 @@ def main_menu(uid):
     user = get_user(uid)
     tarif = user.get("tarif", "free") if user else "free"
     btns = [
-        [InlineKeyboardButton(text="📄 DEMO ko'rish (5-betlik)", callback_data="demo")],
+        [InlineKeyboardButton(text="📄 Demo ko'rish (5-betlik)", callback_data="demo")],
         [InlineKeyboardButton(text="🔍 Plagiat tekshirish", callback_data="plagiat")],
     ]
     if tarif != "free":
         btns.append([InlineKeyboardButton(text="✍️ Band yozish (AI)", callback_data="write_band")])
         btns.append([InlineKeyboardButton(text="📊 Mening progressim", callback_data="progress")])
+        btns.append([InlineKeyboardButton(text="📥 Hamma bandlarni yuklab olish", callback_data="download_all")])
     btns.append([InlineKeyboardButton(text="💰 Tarif sotib olish", callback_data="buy_tarif")])
+    btns.append([InlineKeyboardButton(text="📋 Tariflar narxi", callback_data="show_tarifs")])
     btns.append([InlineKeyboardButton(text="👤 Profilim", callback_data="my_profile")])
+    btns.append([InlineKeyboardButton(text="📞 Admin bilan bog'lanish", callback_data="contact_admin")])
     return InlineKeyboardMarkup(inline_keyboard=btns)
 
 def band_menu(band_num, band_name):
@@ -247,14 +250,19 @@ async def cmd_demo(message: types.Message):
 
 @dp.callback_query(F.data == "demo")
 async def callback_demo(callback: types.CallbackQuery):
-    await send_demo(callback.message)
+    await send_demo(callback.message, uid=callback.from_user.id)
     await callback.answer()
 
-async def send_demo(message):
+async def send_demo(message, uid=None):
     wait = await message.answer("⏳ Demo tayyorlanmoqda... (10-20 soniya)")
     try:
         filename = f"demo_{message.chat.id}.docx"
-        generate_demo(filename)
+        # User ismi va mavzusini olish
+        user_id = uid or message.chat.id
+        user = get_user(user_id)
+        user_name = user.get("name", "Foydalanuvchi") if user else "Foydalanuvchi"
+        user_topic = user.get("topic", None) if user else None
+        generate_demo(filename, user_name=user_name, user_topic=user_topic, is_demo=True)
         await bot.delete_message(message.chat.id, wait.message_id)
         await message.answer_document(
             types.FSInputFile(filename),
@@ -801,6 +809,78 @@ async def show_tarifs(callback: types.CallbackQuery):
     )
     await callback.answer()
 
+@dp.callback_query(F.data == "contact_admin")
+async def contact_admin(callback: types.CallbackQuery):
+    await callback.message.answer(
+        "📞 ADMIN BILAN BOG'LANISH\n\n"
+        "✉️ Telegram: @admin_username\n"
+        "📱 Telefon: +998 XX XXX XX XX\n\n"
+        "⏰ Ish vaqti: 9:00 - 18:00\n"
+        "📅 Dush-Shan"
+    )
+    await callback.answer()
+
+@dp.callback_query(F.data == "download_all")
+async def download_all(callback: types.CallbackQuery):
+    uid = callback.from_user.id
+    user = get_user(uid)
+    if not user or not user.get("bands"):
+        await callback.message.answer("❌ Hali hech qanday band yozilmagan!")
+        await callback.answer()
+        return
+
+    wait = await callback.message.answer("⏳ Barcha bandlar birlashtirilmoqda...")
+
+    from docx import Document
+    from docx.shared import Pt
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    doc = Document()
+    section = doc.sections[0]
+
+    # Muqova
+    title = doc.add_heading(f"DISSERTATSIYA", 0)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.add_run(f"Muallif: {user.get('name', '')}").font.size = Pt(14)
+
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.add_run(f"Mavzu: {user.get('topic', '')}").font.size = Pt(12)
+    doc.add_page_break()
+
+    bands = user.get("bands", {})
+    for num, band in sorted(bands.items()):
+        h = doc.add_heading(f"{num}. {band['name']}", level=1)
+        for para in band["text"].split("\n"):
+            if para.strip():
+                p = doc.add_paragraph(para)
+                p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                for run in p.runs:
+                    run.font.size = Pt(12)
+                    run.font.name = "Times New Roman"
+        doc.add_paragraph()
+        doc.add_paragraph(f"✅ Originallik: {band['orig']}%")
+        doc.add_page_break()
+
+    filename = f"full_dissertation_{uid}.docx"
+    doc.save(filename)
+    import os
+    await bot.delete_message(callback.message.chat.id, wait.message_id)
+    await callback.message.answer_document(
+        types.FSInputFile(filename),
+        caption=(
+            f"📚 TO'LIQ DISSERTATSIYA\n\n"
+            f"👤 {user.get('name', '')}\n"
+            f"📝 Bandlar: {len(bands)} ta\n"
+            f"📅 {datetime.now().strftime('%Y-%m-%d')}\n\n"
+            f"✅ Barcha bandlar birlashtirildi!"
+        )
+    )
+    os.remove(filename)
+    await callback.answer()
+
 @dp.callback_query(F.data == "my_profile")
 async def my_profile(callback: types.CallbackQuery):
     uid = callback.from_user.id
@@ -840,3 +920,4 @@ async def main():
 if __name__ == "__main__":
     import asyncio
     asyncio.run(main())
+
