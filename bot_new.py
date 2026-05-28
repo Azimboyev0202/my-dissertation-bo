@@ -358,11 +358,28 @@ async def reg_tarif(callback: types.CallbackQuery, state: FSMContext):
 async def adm_approve(callback: types.CallbackQuery):
     if not is_admin(callback.from_user.id): return
     uid = int(callback.data.replace("adm_approve_", ""))
-    if uid not in pending_users:
-        await callback.answer("Foydalanuvchi topilmadi!", show_alert=True)
-        return
 
-    user = pending_users.pop(uid)
+    # Render restart bo'lsa pending_users yo'qoladi - shuning uchun fallback
+    if uid in pending_users:
+        user = pending_users.pop(uid)
+    elif uid in users_db:
+        # Allaqachon tasdiqlangan
+        await callback.answer("Bu foydalanuvchi allaqachon tasdiqlangan!", show_alert=True)
+        return
+    else:
+        # Restart bo'lgan - minimal user yaratamiz
+        user = {
+            "name": "Foydalanuvchi",
+            "phone": "-",
+            "topic": "-",
+            "help_type": "-",
+            "tarif": "free",
+            "registered_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "user_id": uid,
+            "username": "-",
+        }
+        await callback.answer("⚠️ Bot restart bo'lgan, minimal ma'lumot bilan tasdiqlandi.", show_alert=True)
+
     user["status"] = "approved"
     user["bands"] = {}
     users_db[uid] = user
@@ -411,7 +428,13 @@ async def adm_reject(callback: types.CallbackQuery):
     if not is_admin(callback.from_user.id): return
     uid = int(callback.data.replace("adm_reject_", ""))
     if uid not in pending_users:
-        await callback.answer("Foydalanuvchi topilmadi!", show_alert=True)
+        # Restart bo'lgan - baribir xabar yuboramiz
+        await bot.send_message(uid,
+            f"❌ So'rovingiz rad etildi.\n"
+            f"📞 {ADMIN_USERNAME}"
+        )
+        await callback.message.edit_reply_markup(reply_markup=None)
+        await callback.answer("Rad etildi (restart bo'lgan).", show_alert=True)
         return
     user = pending_users.pop(uid)
     await bot.send_message(
@@ -427,11 +450,11 @@ async def adm_reject(callback: types.CallbackQuery):
 # ========================================
 # REPLY KEYBOARD HANDLERS
 # ========================================
-@dp.message(F.text == "📄 Demo ko'rish")
+@dp.message(F.text == "📄 Demo ko'rish", StateFilter(None))
 async def reply_demo(message: types.Message):
     await send_demo(message, uid=message.from_user.id)
 
-@dp.message(F.text == "🔍 Plagiat tekshirish")
+@dp.message(F.text == "🔍 Plagiat tekshirish", StateFilter(None))
 async def reply_plagiat(message: types.Message, state: FSMContext):
     await message.answer(
         "🔍 PLAGIAT TEKSHIRUV\n\n"
@@ -440,27 +463,27 @@ async def reply_plagiat(message: types.Message, state: FSMContext):
     )
     await state.set_state(PlagiatCheck.text)
 
-@dp.message(F.text == "💰 Tarif sotib olish")
+@dp.message(F.text == "💰 Tarif sotib olish", StateFilter(None))
 async def reply_buy(message: types.Message):
     await show_buy_tarif(message)
 
-@dp.message(F.text == "👤 Profilim")
+@dp.message(F.text == "👤 Profilim", StateFilter(None))
 async def reply_profile(message: types.Message):
     await show_profile(message, message.from_user.id)
 
-@dp.message(F.text == "📞 Admin bilan bog'lanish")
+@dp.message(F.text == "📞 Admin bilan bog'lanish", StateFilter(None))
 async def reply_admin(message: types.Message):
     await show_admin_contact(message)
 
-@dp.message(F.text == "✍️ Band yozish (AI)")
+@dp.message(F.text == "✍️ Band yozish (AI)", StateFilter(None))
 async def reply_write_band(message: types.Message, state: FSMContext):
     await start_band_write(message, state, message.from_user.id)
 
-@dp.message(F.text == "📊 Progress")
+@dp.message(F.text == "📊 Progress", StateFilter(None))
 async def reply_progress(message: types.Message):
     await show_progress_msg(message, message.from_user.id)
 
-@dp.message(F.text == "📥 Hamma bandlarni yuklab")
+@dp.message(F.text == "📥 Hamma bandlarni yuklab", StateFilter(None))
 async def reply_download(message: types.Message):
     await download_all_bands(message, message.from_user.id)
 
